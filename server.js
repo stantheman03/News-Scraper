@@ -4,11 +4,11 @@ var mongoose = require("mongoose");
 var path = require("path");
 var Note = require("./models/Note");
 var Article = require("./models/Article");
+var axios = require("axios");
+var cheerio = require("cheerio");
 
-var axios = require("axios")
-var cheerio = require("cheerio")
 
-mongoose.Promise = Promise;
+mongoose.connect("mongodb://localhost:27107/unitPopulator",{useNewUrlParser:true})
 
 var app = express()
 // morgan for the app
@@ -40,7 +40,7 @@ app.get("/",function(req,res){
 
 // get routes for scrape
 app.get("/scrape",function(req,res){
-  axios.get("http://www.nytimes.com",function(response){
+  axios.get("http://www.nytimes.com").then(function(response){
       var $ = cheerio.load(response.data);
 
     $("article h3").each(function(i, element){
@@ -50,66 +50,54 @@ app.get("/scrape",function(req,res){
         result.summary = $(this).children("a").text();
         result.link = $(this).children("a").attr("href")
 
-        var entry = new Article(result)
-        entry.save(function(err,datas){
-            if(err){
-                console.log(err)
-            }
-            else{
-                console.log(datas)
-            }
-        });
+    db.Article.create(result).then(function(dbArticle){
+        console.log(dbArticle)
+    })
+    .catch(function(err){
+        return res.json(err)
     });
-  }) 
-  res.redirect("/")
-})
+    });
+    res.send("scrape complete")
+  });
+  
+});
 
 // getting the articles being scrapped
 app.get("/articles",function(req,res){
-    Article.find({},function(err,data){
-        if(err){
-            console.log(err)
-        }
-        else{
-            res.json(data)
-        }
-    });
+    db.Article.find({})
+    .then(function(dbArticle){
+        res.json(dbArticle)
+    })
+    .catch(function(err){
+        res.json(err)
+    })
 });
 
 
 
 // article by objectid
 app.get("/articles/:id",function(req,res){
-    Article.findOne({"_id":req.params.id})
-    .populate("note")
-    .exec(function(error,data){
-        if(error){
-            console.log(error)
-        }
-        else{
-            res.json(data)
-        }
-    })
+    db.Article.findOne({_id:req.params.id})
+.populate("note")
+.then(function(dbArticle){
+    res.json(dbArticle)
 })
+.catch(function(err){
+    res.json(err)
+})
+});
 
 // create new note or replace 
 app.post("/articles/:id",function(req,res){
-    var newNote = new Note(req.body)
-    newNote.save(function(err,data){
-        if(err){
-            console.log(err)
-        }
-        else{
-            Article.findOneAndUpdate({"_id":req.params.id},{"notes":doc._id})
-            .exec(function(err,result){
-                if(err){
-                    console.log(err)
-                }
-                else{
-                    res.send(result)
-                }
-            });
-        }
+    db.Note.create(req.body)
+    .then(function(dbNote){
+        return db.Article.findOneAndUpdate({_id: req.params.id},{note:dbNote._d},{new:true})
+    })
+    .then(function(dbArticle){
+        res.json(dbArticle)
+    })
+    .catch(function(err){
+        res.json(err)
     });
 });
 
